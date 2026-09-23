@@ -1,15 +1,40 @@
 import paho.mqtt.client as mqtt
 import json
+import smtplib
+import os
+from email.message import EmailMessage
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# 2. Définition de la fonction d'envoi d'email
+def envoyer_alerte(type_alerte, valeur, seuil):
+
+    msg = EmailMessage()
+    texte_alerte = f"L'alerte '{type_alerte}' a été déclenchée.\nValeur relevée : {valeur}\nSeuil autorisé : {seuil}"
+    msg.set_content(texte_alerte)
+
+    msg['Subject'] = f"⚠️ Alerte Météo : {type_alerte}"
+    msg['From'] = os.getenv("EMAIL_SENDER")
+    msg['To'] = os.getenv("EMAIL_RECEIVER")
+
+    if True:
+        s = smtplib.SMTP('smtp.gmail.com', 587)
+        s.starttls()
+        s.login(os.getenv("EMAIL_SENDER"), os.getenv("EMAIL_PASSWORD"))
+        s.send_message(msg)
+        s.quit()
+        print(f"📧 ✅ Email d'alerte envoyé pour : {type_alerte}")
 
 
-# The callback for when the client receives a CONNACK response from the server.
+
+
 def on_connect(client, userdata, flags, reason_code, properties):
     print(f"Connected with result code {reason_code}")
-    # Subscribing in on_connect() means that if we lose the connection and
-    # reconnect then subscriptions will be renewed.
-    client.subscribe("cci/SenseCAP")
 
-# The callback for when a PUBLISH message is received from the server.
+    client.subscribe(os.getenv("MQTT_TOPIC"))
+
+
 def on_message(client, userdata, msg):
     print("Topic     : " + msg.topic)
 
@@ -86,6 +111,30 @@ def on_message(client, userdata, msg):
         "Cumulative Rainfall" : f"{decoded_cumulative_rainfall / 10.0} mm"
     }
 
+    # 1. On récupère les seuils du .env en forçant le format décimal (float)
+    seuil_chaleur = float(os.getenv("ALERTE_CHALEUR"))
+    seuil_froid = float(os.getenv("ALERTE_FROID"))
+    seuil_vent = float(os.getenv("ALERTE_VENT"))
+    seuil_pluie = float(os.getenv("ALERTE_PLUIE"))
+
+
+    temp_actuelle = decode_temperature / 10.0
+    vent_actuel = decoded_speed / 10.0
+    pluie_actuelle = decoded_cumulative_rainfall / 10.0
+
+    # 3. On teste les conditions et on déclenche la fonction d'envoi d'email
+    if temp_actuelle >= seuil_chaleur:
+        envoyer_alerte("Chaleur", temp_actuelle, seuil_chaleur)
+
+    if temp_actuelle <= seuil_froid:
+        envoyer_alerte("Froid", temp_actuelle, seuil_froid)
+
+    if vent_actuel >= seuil_vent:
+        envoyer_alerte("Vent Violent", vent_actuel, seuil_vent)
+
+    if pluie_actuelle >= seuil_pluie:
+        envoyer_alerte("Pluie Abondante", pluie_actuelle, seuil_pluie)
+
     with open("releves_meteo.json", "w", encoding="utf-8") as fichier:
         json.dump(donnees_decodes, fichier, indent=4,  ensure_ascii=False)
 
@@ -95,11 +144,9 @@ mqttc = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
 mqttc.on_connect = on_connect
 mqttc.on_message = on_message
 
+broker = os.getenv("MQTT_BROKER")
+port = int(os.getenv("MQTT_PORT"))
 
-mqttc.connect("test.mosquitto.org", 1883, 60)
 
-# Blocking call that processes network traffic, dispatches callbacks and
-# handles reconnecting.
-# Other loop*() functions are available that give a threaded interface and a
-# manual interface.
+mqttc.connect(broker, port, 60)
 mqttc.loop_forever()

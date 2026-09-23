@@ -2,6 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
+      <module fileurl="file://$PROJECT_DIR$/.idea/paho-mqtt.iml" filepath="$PROJECT_DIR$/.idea/paho-mqtt.iml" />
       <module fileurl="file://$PROJECT_DIR$/.idea/test_app_.iml" filepath="$PROJECT_DIR$/.idea/test_app_.iml" />
     </modules>
   </component>
