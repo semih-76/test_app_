@@ -17,6 +17,10 @@ try:
     essais.insert_one({"message": "test"})
     print("Message inséré avec succès")
 
+    # Récupérer le message
+    essais.find_one({"message": "test"})
+    print("Message récupéré avec succès")
+
     # Modifier un message
     essais.update_one({"message": "test"}, {"$set": {"valeur": 4}})
     print("Message modifié avec succès")
