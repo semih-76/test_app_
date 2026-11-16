@@ -24,7 +24,7 @@ def envoyer_alerte(type_alerte, valeur, seuil):
         s.login(os.getenv("EMAIL_SENDER"), os.getenv("EMAIL_PASSWORD"))
         s.send_message(msg)
         s.quit()
-        print(f"📧 ✅ Email d'alerte envoyé pour : {type_alerte}")
+        print(f"Email d'alerte envoyé pour : {type_alerte}")
 
 
 
