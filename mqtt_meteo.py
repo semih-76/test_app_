@@ -2,14 +2,15 @@ import paho.mqtt.client as mqtt
 import json
 import smtplib
 import os
+from datetime import datetime, timezone
 from email.message import EmailMessage
 from dotenv import load_dotenv
+from importer import inserer_une_mesure
 
 load_dotenv()
 
-# 2. Définition de la fonction d'envoi d'email
-def envoyer_alerte(type_alerte, valeur, seuil):
 
+def envoyer_alerte(type_alerte, valeur, seuil):
     msg = EmailMessage()
     texte_alerte = f"L'alerte '{type_alerte}' a été déclenchée.\nValeur relevée : {valeur}\nSeuil autorisé : {seuil}"
     msg.set_content(texte_alerte)
@@ -18,34 +19,31 @@ def envoyer_alerte(type_alerte, valeur, seuil):
     msg['From'] = os.getenv("EMAIL_SENDER")
     msg['To'] = os.getenv("EMAIL_RECEIVER")
 
-    if True:
+    try:
         s = smtplib.SMTP('smtp.gmail.com', 587)
         s.starttls()
         s.login(os.getenv("EMAIL_SENDER"), os.getenv("EMAIL_PASSWORD"))
         s.send_message(msg)
         s.quit()
         print(f"Email d'alerte envoyé pour : {type_alerte}")
-
-
+    except Exception as e:
+        print(f"Erreur lors de l'envoi de l'email d'alerte : {e}")
 
 
 def on_connect(client, userdata, flags, reason_code, properties):
     print(f"Connected with result code {reason_code}")
-
     client.subscribe(os.getenv("MQTT_TOPIC"))
 
 
 def on_message(client, userdata, msg):
     print("Topic     : " + msg.topic)
-
     texte_decode = msg.payload.decode("utf-8")
-
     donnees = json.loads(texte_decode)
-
     print("Données décodées :", donnees)
 
     payload = donnees["payload"]
 
+    # Décodage hexadécimal des capteurs
     bloc_ID1 = payload[0:2]
     decoded_Id1 = int(bloc_ID1, 16)
     print(f"{decoded_Id1} ID")
@@ -98,31 +96,63 @@ def on_message(client, userdata, msg):
     decoded_cumulative_rainfall = int(bloc_cumulative_rainfall, 16)
     print(f"Cumulative Rainfall : { decoded_cumulative_rainfall / 10.0 } mm")
 
-    donnees_decodes = {
-        "Air Temperature" : f"{decode_temperature / 10.0} ℃",
-        "Air Humidity" : f"{decode_Humidity / 10.0} % RH",
-        "Light Intensity" : f"{decode_Light} Lux",
-        "UV Index" : f"{decoded_uv / 10.0} UV",
-        "Wind Speed" : f"{decoded_speed / 10.0} m/s",
-        "Wind Direction" :  f"{decoded_direction / 10.0} °",
-        "Rainfall Intensity" : f"{decoded_rainfall / 1000} mm/hour",
-        "Barometric Pressure" : f"{decoded_pressure}Pa",
-        "Peak Wind Gust" : f"{decoded_peak / 10.0} m/s",
-        "Cumulative Rainfall" : f"{decoded_cumulative_rainfall / 10.0} mm"
+    # Valeurs numériques calculées
+    temp_actuelle = decode_temperature / 10.0
+    humidite_actuelle = decode_Humidity / 10.0
+    luminosite_actuelle = decode_Light
+    uv_actuel = decoded_uv / 10.0
+    vent_actuel = decoded_speed / 10.0
+    direction_actuelle = int(round(decoded_direction / 10.0))
+    precipitation_actuelle = decoded_rainfall / 1000.0
+    pression_actuelle = decoded_pressure / 10.0  # Vérifie si ton capteur envoie en dixièmes d'hPa
+    rafale_actuelle = decoded_peak / 10.0
+    pluie_actuelle = decoded_cumulative_rainfall / 10.0
+
+    # Construction de la trame au format du dictionnaire de données pour MongoDB
+    trame_mongodb = {
+        "device": donnees.get("device", str(decoded_Id1)),
+        "time": donnees.get("time", datetime.now(timezone.utc).isoformat()),
+        "payload": payload,
+        "mesures": {
+            "temperature": temp_actuelle,
+            "humidite": humidite_actuelle,
+            "luminosite": luminosite_actuelle,
+            "indice_uv": uv_actuel,
+            "vent_vitesse": vent_actuel,
+            "vent_direction": direction_actuelle,
+            "precipitation": precipitation_actuelle,
+            "pression_atmospherique": pression_actuelle,
+            "rafale_max": rafale_actuelle,
+            "pluie_cumul": pluie_actuelle
+        }
     }
 
-    # 1. On récupère les seuils du .env en forçant le format décimal (float)
+    # Envoi et validation vers MongoDB Atlas via importer.py
+    inserer_une_mesure(trame_mongodb)
+
+    # Sauvegarde locale conservée
+    donnees_decodes = {
+        "Air Temperature": f"{temp_actuelle} ℃",
+        "Air Humidity": f"{humidite_actuelle} % RH",
+        "Light Intensity": f"{luminosite_actuelle} Lux",
+        "UV Index": f"{uv_actuel} UV",
+        "Wind Speed": f"{vent_actuel} m/s",
+        "Wind Direction": f"{decoded_direction / 10.0} °",
+        "Rainfall Intensity": f"{precipitation_actuelle} mm/hour",
+        "Barometric Pressure": f"{decoded_pressure} Pa",
+        "Peak Wind Gust": f"{rafale_actuelle} m/s",
+        "Cumulative Rainfall": f"{pluie_actuelle} mm"
+    }
+
+    with open("releves_meteo.json", "w", encoding="utf-8") as fichier:
+        json.dump(donnees_decodes, fichier, indent=4, ensure_ascii=False)
+
+    # Gestion des alertes email
     seuil_chaleur = float(os.getenv("ALERTE_CHALEUR"))
     seuil_froid = float(os.getenv("ALERTE_FROID"))
     seuil_vent = float(os.getenv("ALERTE_VENT"))
     seuil_pluie = float(os.getenv("ALERTE_PLUIE"))
 
-
-    temp_actuelle = decode_temperature / 10.0
-    vent_actuel = decoded_speed / 10.0
-    pluie_actuelle = decoded_cumulative_rainfall / 10.0
-
-    # 3. On teste les conditions et on déclenche la fonction d'envoi d'email
     if temp_actuelle >= seuil_chaleur:
         envoyer_alerte("Chaleur", temp_actuelle, seuil_chaleur)
 
@@ -135,10 +165,6 @@ def on_message(client, userdata, msg):
     if pluie_actuelle >= seuil_pluie:
         envoyer_alerte("Pluie Abondante", pluie_actuelle, seuil_pluie)
 
-    with open("releves_meteo.json", "w", encoding="utf-8") as fichier:
-        json.dump(donnees_decodes, fichier, indent=4,  ensure_ascii=False)
-
-
 
 mqttc = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
 mqttc.on_connect = on_connect
@@ -146,7 +172,6 @@ mqttc.on_message = on_message
 
 broker = os.getenv("MQTT_BROKER")
 port = int(os.getenv("MQTT_PORT"))
-
 
 mqttc.connect(broker, port, 60)
 mqttc.loop_forever()
