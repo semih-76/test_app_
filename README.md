@@ -19,7 +19,7 @@ Ce projet permet de collecter, valider et stocker des mesures météorologiques 
 .
 ├── importer.py           # Validation des trames, insertion sans doublon et journalisation
 ├── requetes.py           # Requêtes d'analyse sur la collection mesures
-├── collecteur.py         # Script de collecte en temps réel relié à MongoDB
+├── mqtt_meteo.py        # Script de collecte en temps réel relié à MongoDB
 ├── mesures-exemple.json  # Jeu de données de test au format JSON
 ├── .env.example          # Modèle des variables d'environnement requises
 ├── .gitignore            # Fichiers exclus du suivi Git (dont .env)
