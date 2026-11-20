@@ -3,7 +3,7 @@ import json
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 from pymongo import MongoClient
-from pymongo.errors import PyMongoError, BulkWriteError
+from pymongo.errors import PyMongoError, BulkWriteError, DuplicateKeyError
 
 load_dotenv()
 MONGO_URI = os.getenv("MONGO_URI")
@@ -148,6 +148,24 @@ def traiter_et_inserer_donnees(fichier_json):
     print(bilan)
     journaliser("INGESTION", "SUCCES", bilan)
 
+    def inserer_une_mesure(trame):
+        """Valide une trame reçue en MQTT et l'insère dans la collection mesures."""
+        doc, erreur = valider_et_transformer_trame(trame)
+        if erreur:
+            print(f"Mesure rejetée : {erreur}")
+            journaliser("MESURE_REJETEE", "ECHEC", erreur, detail=trame)
+            return False
+
+        try:
+            collection_mesures.insert_one(doc)
+            print("Mesure insérée dans MongoDB.")
+            return True
+        except DuplicateKeyError:
+            print("Doublon ignoré.")
+            return False
+        except PyMongoError as e:
+            print(f"Erreur d'insertion MongoDB : {e}")
+            return False
 
 if __name__ == "__main__":
     traiter_et_inserer_donnees("mesures-exemple.json")
