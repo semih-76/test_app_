@@ -147,25 +147,33 @@ def traiter_et_inserer_donnees(fichier_json):
     bilan = f"Import terminé : {nb_inseres} insérée(s), {nb_doublons} doublon(s) ignoré(s), {nb_rejets} rejetée(s)."
     print(bilan)
     journaliser("INGESTION", "SUCCES", bilan)
+    bilan = f"Import terminé : {nb_inseres} insérée(s), {nb_doublons} doublon(s) ignoré(s), {nb_rejets} rejetée(s)."
+    print(bilan)
+    journaliser("INGESTION", "SUCCES", bilan)
 
-    def inserer_une_mesure(trame):
-        """Valide une trame reçue en MQTT et l'insère dans la collection mesures."""
-        doc, erreur = valider_et_transformer_trame(trame)
-        if erreur:
-            print(f"Mesure rejetée : {erreur}")
-            journaliser("MESURE_REJETEE", "ECHEC", erreur, detail=trame)
-            return False
 
-        try:
-            collection_mesures.insert_one(doc)
-            print("Mesure insérée dans MongoDB.")
-            return True
-        except DuplicateKeyError:
-            print("Doublon ignoré.")
-            return False
-        except PyMongoError as e:
-            print(f"Erreur d'insertion MongoDB : {e}")
-            return False
+def inserer_une_mesure(trame):
+    """Valide une trame reçue en MQTT et l'insère dans la collection mesures."""
+    doc, erreur = valider_et_transformer_trame(trame)
+    if erreur:
+        print(f"Mesure rejetée : {erreur}")
+        journaliser("MESURE_REJETEE", "ECHEC", erreur, detail=trame)
+        return False
+
+    try:
+        collection_mesures.insert_one(doc)
+        print("Mesure insérée dans MongoDB.")
+        return True
+    except DuplicateKeyError:
+        print("Doublon ignoré.")
+        return False
+    except PyMongoError as e:
+        print(f"Erreur d'insertion MongoDB : {e}")
+        return False
+
+
+if __name__ == "__main__":
+    traiter_et_inserer_donnees("mesures-exemple.json")
 
 if __name__ == "__main__":
     traiter_et_inserer_donnees("mesures-exemple.json")
