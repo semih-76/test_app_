@@ -45,7 +45,7 @@ def decoder_hexa(payload):
 
 
 def lire_json_clair(d):
-    """Format en clair (SenseCAP S2120 / simulateur)."""
+    """Format en clair (simulateur)."""
     return {
         "temperature": float(d["temperature"]),
         "humidite": float(d["humidity"]),
@@ -57,6 +57,23 @@ def lire_json_clair(d):
         "precipitation": float(d["rainfall"]),
         "pluie_cumul": float(d["rain_accumulation"]),
         "pression_atmospherique": float(d["air_pressure"]),
+    }
+
+
+def lire_measurements(liste):
+    """Format réel OrangeLoRa (Station_météo_cd41 / SenseCAP S2120)."""
+    m = {item["type"]: item["doubleValue"] for item in liste}
+    return {
+        "temperature": float(m["Temperature"]),
+        "humidite": float(m["Humidity"]),
+        "luminosite": int(m["Brightness"]),
+        "indice_uv": float(m["UvIndex"]),
+        "vent_vitesse": float(m["WindSpeed"]),
+        "vent_direction": int(m["WindDegrees"]),
+        "precipitation": float(m["Rain"]),
+        "pression_atmospherique": float(m["Pressure"]),
+        "rafale_max": float(m["PeakWindGust"]),
+        "pluie_cumul": float(m["RainAccumulation"]),
     }
 
 
@@ -72,7 +89,7 @@ def heure_en_utc(valeur):
 def on_connect(client, userdata, flags, reason_code, properties):
     print(f"Connected with result code {reason_code}")
     topic = os.getenv("MQTT_TOPIC")
-    print(f"Abonné à : {topic}")
+    print(f"Topic écouté : {topic!r}")
     client.subscribe(topic)
 
 
@@ -86,7 +103,11 @@ def on_message(client, userdata, msg):
         print("Topic     :", msg.topic)
         print("Données reçues :", donnees)
 
-        if "payload" in donnees:
+        if "measurements" in donnees:
+            mesures = lire_measurements(donnees["measurements"])
+            device = str(donnees.get("eui", "inconnu"))
+            brut = donnees.get("payloadHex", json.dumps(donnees))
+        elif "payload" in donnees:
             mesures = decoder_hexa(donnees["payload"])
             device = str(donnees.get("device", "inconnu"))
             brut = donnees["payload"]
@@ -98,7 +119,7 @@ def on_message(client, userdata, msg):
             print("Message ignoré (format inconnu)")
             return
 
-        instant = heure_en_utc(donnees.get("time"))
+        instant = heure_en_utc(donnees.get("timestamp") or donnees.get("time"))
 
         inserer_une_mesure({
             "device": device,
@@ -107,9 +128,21 @@ def on_message(client, userdata, msg):
             "mesures": mesures,
         })
 
+        releve_avec_unites = {
+            "temperature": f"{mesures['temperature']} °C",
+            "humidite": f"{mesures['humidite']} %",
+            "luminosite": f"{mesures['luminosite']} lux",
+            "indice_uv": f"{mesures['indice_uv']} UV",
+            "vent_vitesse": f"{mesures['vent_vitesse']} km/h",
+            "vent_direction": f"{mesures['vent_direction']} °",
+            "precipitation": f"{mesures['precipitation']} mm",
+            "pression_atmospherique": f"{mesures['pression_atmospherique']} hPa",
+            "rafale_max": f"{mesures['rafale_max']} m/s",
+            "pluie_cumul": f"{mesures['pluie_cumul']} mm",
+        }
+
         with open("releves_meteo.json", "w", encoding="utf-8") as f:
-            json.dump({"device": device, "time": instant, **mesures},
-                      f, indent=4, ensure_ascii=False)
+            json.dump(releve_avec_unites, f, indent=4, ensure_ascii=False)
 
         seuils = {
             "Chaleur": (mesures["temperature"] >= float(os.getenv("ALERTE_CHALEUR")), mesures["temperature"], "ALERTE_CHALEUR"),
